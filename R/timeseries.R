@@ -963,7 +963,6 @@ TIME.SERIES <- setRefClass("TIME.SERIES",
                              },
 
                              plot.history = function(period = stn:ctn, figures = numFigs(), package = 'dygraphs', type = 'ts.line', click_input_id = NULL, config = NULL, ...){
-                               type = tolower(type)
                                verify(type, 'character', domain = 'ts.line', varname = 'type')
                                verify(package, 'character', c('googleVis', 'dygraphs', 'plotly'), varname = 'package')
                                verify(figures, 'character', domain = numerics(data), varname = "figures", null_allowed = F)

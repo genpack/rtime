@@ -17,9 +17,6 @@
 
 #' @import gener
 
-
-valid.addables.classes = c('numeric', 'integer', 'timeDate', 'POSIXlt', 'Date', 'double')
-
 valid.arima.methods    = c('CSS-ML', 'ML', 'CSS')
 
 
@@ -84,7 +81,7 @@ TS.DAILY <- setRefClass("TS.DAILY",
 
                           feedData = function(dataset, date_col = NULL){
                             dataset %<>% nameColumns(columns = list(date = date_col), classes = list(date = 'Date'))
-                            data <<- data %>% left_join(dataset, by = 'date')
+                            data <<- data %>% left_join(dataset, by = 'date') %>% na2zero
                           },
 
                           feedEventLog = function(dataset, time_col, aggrFuncNames = NULL){
@@ -212,31 +209,30 @@ TS.DAILY <- setRefClass("TS.DAILY",
                             return( data[N.int, figure])
                           },
 
-                          aggregate.seasonal = function(period = sequence(ctn), figures = numFigs(), seasonality = 'dow', func = mean, centralize = F, replace.missing = NA, rem.seas.col = T){
+                          aggregate.seasonal = function(period = sequence(ctn), figures = numFigs(), seasonality = 'dow', aggregator = mean, centralize = F, replace.missing = NA, rem.seas.col = T){
                             # Verifications
                             assert(seasonality %in% c('dow', 'moy', 'doy', 'dof'), err_msg = "Unknown value for argument 'seasonality'. Must be in c('dow', 'moy', 'doy')", match.call()[[1]])
 
                             dataset = data[period, figures, drop = F]
-                            timeset = time[period]
+                            timeset = data$date[period]
                             dataset[is.na(dataset)] <- replace.missing
                             switch(seasonality,
                                    'dow' = {
-                                     S   <- aggregate(dataset, by = list(dayOfWeek(timeset)), FUN = func)
-                                     S[,1] = factor(S[,1], levels = names(wdlabel), labels = wdlabel)
+                                     S   <- aggregate(dataset, by = list(weekdays(timeset)), FUN = aggregator)
                                    },
                                    'dof' = {
-                                     S   <- aggregate(dataset, by = list(fortday(timeset)), FUN = func)
+                                     S   <- aggregate(dataset, by = list(fortday(timeset)), FUN = aggregator)
                                      S[,1] = factor(S[,1], levels = fdlabel, labels = fdlabel)
                                    },
                                    'moy' = {
-                                     mlb   = mntlabel[months(timeset)]
-                                     S     = aggregate(dataset, by = list(mlb), FUN = func)
+                                     mlb   = months(timeset)
+                                     S     = aggregate(dataset, by = list(mlb), FUN = aggregator)
                                      S[,1] = factor(S[,1], levels = mntlabel)
                                    },
                                    'doy' = {
                                      tt    = as.POSIXlt(timeset)
                                      dylb  = paste(tt$mday, mntlabel[tt$mon + 1])
-                                     S     = aggregate(dataset, by = list(dylb), FUN = func)
+                                     S     = aggregate(dataset, by = list(dylb), FUN = aggregator)
                                      S[,1] = factor(S[,1], levels = dylb)
                                      # todo: dylb must be sorted to be set as levels
                                    })
@@ -266,13 +262,13 @@ TS.DAILY <- setRefClass("TS.DAILY",
                             gvisMotionChart(U, idvar = idVarName, timevar = 'dateTimeVar', sizevar = 'value', options = list(state = stateSettings))
                           }, # Regular Motioan Chart, remember googleVis motionchart only accepts date or numeric as time
 
-                          plot.seasonality = function(period  = sequence(ctn), figures = numFigs(), seasonality = 'dow', func = mean, centralize = F, replace.missing = NA,
-                                                      package = 'googleVis', type = 'bar', click_input_id = NULL, config = NULL, ...){
+                          plot.seasonality = function(period  = sequence(ctn), figures = numFigs(), seasonality = 'dow', aggregator = mean, centralize = F, replace.missing = NA,
+                                                      package = 'plotly', type = 'bar', click_input_id = NULL, config = NULL, ...){
                             verify(type, 'character', domain = 'bar', varname = 'type')
                             verify(package, 'character', domain = c('googleVis', 'plotly'), varname = 'package')
                             assert(require(package, character.only = T), "Package " %++% package %++% " is not installed!", err_src = match.call()[[1]])
-                            assert(require('niravis'), "Package niravis is not installed!", err_src = match.call()[[1]])
-                            S = aggregate.seasonal(period = period, figures = figures, seasonality = seasonality, func = func, centralize = centralize,
+                            assert(require('viser'), "Package viser is not installed!", err_src = match.call()[[1]])
+                            S = aggregate.seasonal(period = period, figures = figures, seasonality = seasonality, aggregator = aggregator, centralize = centralize,
                                                    replace.missing = replace.missing, rem.seas.col = F)
                             S = S[order(S[,1]),]
                             switch(package,
@@ -280,11 +276,11 @@ TS.DAILY <- setRefClass("TS.DAILY",
                                                          'bar' = {
                                                            if (is.null(config)){config = gglvis.column.settings}
                                                            if (!is.null(click_input_id)){config$gvis.listener.jscode = gglvis.click.jscript(click_input_id)}
-                                                           g = googleVis.bar(S, x = 'dow', y = figures, func = NULL, options = config, ...)
+                                                           g = googleVis.bar(S, x = 'dow', y = figures, aggregator = NULL, options = config, ...)
                                                          })},
                                    'plotly' = {switch(type,
                                                       'bar' = {
-                                                        g = plotly.bar(S, x = 'dow', y = figures, func = NULL)
+                                                        g = plotly.bar(S, x = 'dow', y = figures, aggregator = NULL)
                                                       })}
                             )
                             return(g)
@@ -295,7 +291,7 @@ TS.DAILY <- setRefClass("TS.DAILY",
                             verify(type, 'character', domain = 'calheat', varname = 'type')
                             verify(package, 'character', domain = 'googleVis', varname = 'package')
                             assert(require(package, character.only = T), "Package " %++% package %++% " is not installed!", err_src = match.call()[[1]])
-                            assert(require('niravis'), "Package niravis is not installed!", err_src = match.call()[[1]])
+                            assert(require('viser'), "Package viser is not installed!", err_src = match.call()[[1]])
                             switch(package,
                                    'googleVis' = {switch(type,
                                                          'calheat' = {
@@ -320,8 +316,8 @@ TS.DAILY <- setRefClass("TS.DAILY",
                           plot.history = function(period = stn:ctn, figures = numFigs(), plotter = 'dygraphs', type = 'tsline', config = NULL, ...){
                             verify(plotter, 'character', lengths = 1, varname = 'plotter')
                             verify(figures, 'character', domain = c(numerics(data), 'total', 'average'), varname = "figures", null_allowed = F)
-                            assert(require('niravis'), "Package niravis is not installed!", err_src = match.call()[[1]])
-                            data[period, ] %>% niraPlot(x = 'date', y = figures %>% as.list, type = type, plotter = plotter, config = config, ...)
+                            assert(require('viser'), "Package viser is not installed!", err_src = match.call()[[1]])
+                            data[period, ] %>% viserPlot(x = 'date', y = figures %>% as.list, type = type, plotter = plotter, config = config, ...)
                           },
 
                           plot.value = function(period = NULL, figure = numFigs()[1], package = 'rAmCharts', type = 'gauge', levels = NULL, percentage = FALSE, config = NULL, ...){
@@ -329,7 +325,7 @@ TS.DAILY <- setRefClass("TS.DAILY",
                             verify(type, 'character', 'gauge', varname = 'type')
                             verify(package, 'character', c('googleVis', 'rAmCharts'), varname = 'package')
                             assert(require(package, character.only = T), "Package " %++% package %++% " is not installed!", err_src = match.call()[[1]])
-                            assert(require('niravis'), "Package niravis is not installed!", err_src = match.call()[[1]])
+                            assert(require('viser'), "Package viser is not installed!", err_src = match.call()[[1]])
                             period  = verify(period, c('integer', 'numeric'), domain = c(1, N.int), default = ctn, varname = 'period')
 
                             lgnd = list(min = min(data[, figure], na.rm = T), max = max(data[, figure], na.rm = T))
@@ -342,11 +338,11 @@ TS.DAILY <- setRefClass("TS.DAILY",
 
                           },
 
-                          plot.timeBreak.yoy = function(figure, x.axis, years, labels = NULL, year.start = '01-01', func = mean, package = 'dygraphs', type = 'line', ...){
+                          plot.timeBreak.yoy = function(figure, x.axis, years, labels = NULL, year.start = '01-01', aggregator = mean, package = 'dygraphs', type = 'line', ...){
                             # todo: should add more packages and types + add verifications
                             if      (x.axis == 'doy'){D  = timeBreak.doy(years = years, labels = labels, year.start = year.start, figure = figure, pretty = T, sort.rows = T)}
-                            else if (x.axis == 'moy'){D  = timeBreak.moy(years = years, labels = labels, year.start = year.start, figure = figure, func = func)}
-                            else if (x.axis == 'woy'){D  = timeBreak.woy(years = years, labels = labels, year.start = year.start, figure = figure, func = func)}
+                            else if (x.axis == 'moy'){D  = timeBreak.moy(years = years, labels = labels, year.start = year.start, figure = figure, aggregator = aggregator)}
+                            else if (x.axis == 'woy'){D  = timeBreak.woy(years = years, labels = labels, year.start = year.start, figure = figure, aggregator = aggregator)}
                             else {stop("\n Unsupported value for 'x.axis' argument! \n")}
 
                             assert(require(dygraphs), "Package 'dygraphs' is not installed!", err_src = match.call()[[1]])
@@ -355,17 +351,17 @@ TS.DAILY <- setRefClass("TS.DAILY",
                         ))
 
 # Generic Functions:
-setMethod("names",   "TS.DAILY", function(x) names(x$data))
-setMethod("head",    "TS.DAILY", function(x, ...) head(x$data, ...))
-setMethod("tail",    "TS.DAILY", function(x, ...) tail(x$data, ...))
-setMethod("dim",     "TS.DAILY", function(x) dim(x$data))
-setMethod("colSums", "TS.DAILY", function(x) colSums(x$data))
-setMethod("rowSums", "TS.DAILY", function(x) rowSums(x$data))
-setMethod("length",  "TS.DAILY", function(x) length(x$time))
-setMethod("show",    "TS.DAILY", function(object) show(object$data))
-
-setGeneric("duration", function(x) standardGeneric("duration"))
-setMethod("duration", "TS.DAILY", function(x) max(x$data$date) - min(x$data$date))
+# setMethod("names",   "TS.DAILY", function(x) names(x$data))
+# setMethod("head",    "TS.DAILY", function(x, ...) head(x$data, ...))
+# setMethod("tail",    "TS.DAILY", function(x, ...) tail(x$data, ...))
+# setMethod("dim",     "TS.DAILY", function(x) dim(x$data))
+# setMethod("colSums", "TS.DAILY", function(x) colSums(x$data))
+# setMethod("rowSums", "TS.DAILY", function(x) rowSums(x$data))
+# setMethod("length",  "TS.DAILY", function(x) length(x$time))
+# setMethod("show",    "TS.DAILY", function(object) show(object$data))
+# 
+# setGeneric("duration", function(x) standardGeneric("duration"))
+# setMethod("duration", "TS.DAILY", function(x) max(x$data$date) - min(x$data$date))
 
 # Functions working with TIME.SERIES objects:
 #' @export
